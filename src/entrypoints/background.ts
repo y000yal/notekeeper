@@ -61,8 +61,11 @@ async function playChime() {
  */
 async function storePendingReminder(id: string, title: string, body: string) {
   const stored = await chrome.storage.session.get('pendingReminders');
-  const pending: Array<{ id: string; title: string; body: string; ts: number }> =
-    stored.pendingReminders ?? [];
+  const pending: Array<{ id: string; title: string; body: string; ts: number }> = Array.isArray(
+    stored.pendingReminders,
+  )
+    ? stored.pendingReminders
+    : [];
   pending.push({ id, title, body, ts: Date.now() });
   await chrome.storage.session.set({ pendingReminders: pending });
   // Badge tells the user something needs attention.

@@ -38,9 +38,10 @@ export default function App() {
   const [editingPanel, setEditingPanel] = useState<'' | 'remind'>('');
   const [filter, setFilter] = useState<Filter>('all');
   const [confirming, setConfirming] = useState<Note | null>(null);
+  const [confirmingTop, setConfirmingTop] = useState(0);
   const dragId = useRef<string | null>(null);
 
-  const [prefs, setPrefs] = useState<Prefs>({ view: 'list', sort: 'manual', theme: 'light' });
+  const [prefs, setPrefs] = useState<Prefs>({ view: 'grid', sort: 'manual', theme: 'light' });
   const [menu, setMenu] = useState<MenuName>(null);
 
   useEffect(() => {
@@ -55,7 +56,8 @@ export default function App() {
     // Show any reminders that fired while native notifications were blocked (e.g. Brave).
     chrome.runtime.sendMessage({ type: 'get-pending-reminders' }).then(
       (pending: Array<{ id: string; title: string; body: string }>) => {
-        if (pending?.length) setNotice(`Reminder: ${pending[0].title} — ${pending[0].body}`);
+        const first = pending?.[0];
+        if (first) setNotice(`Reminder: ${first.title} — ${first.body}`);
       },
       () => {},
     );
@@ -444,7 +446,10 @@ export default function App() {
                 void scheduleReminder(note.id, done ? null : note.remindAt);
               }}
               onRestore={() => restore(note.id)}
-              onDeleteForever={() => setConfirming(note)}
+              onDeleteForever={(top) => {
+                setConfirmingTop(top);
+                setConfirming(note);
+              }}
             />
         ))}
         {loaded && !visible.length && (
@@ -465,7 +470,7 @@ export default function App() {
             if (e.target === e.currentTarget) setConfirming(null);
           }}
         >
-          <div className="modal dialog">
+          <div className="modal dialog" style={{ marginTop: confirmingTop }}>
             <div className="card">
               <h2>{confirming.deletedAt === null ? 'Delete this note?' : 'Delete forever?'}</h2>
               <p>
@@ -501,7 +506,10 @@ export default function App() {
               knownLabels={labels}
               onChange={(changes) => patch(editing.id, changes)}
               onClose={closeEditor}
-              onDelete={() => setConfirming(editing)}
+              onDelete={() => {
+                setConfirmingTop(editingTop);
+                setConfirming(editing);
+              }}
               onPopOut={() => void popOut(editing)}
               startPanel={editingPanel}
             />
@@ -596,7 +604,7 @@ function NoteCard({
   onRemind: (top: number) => void;
   onToggleReminderDone: () => void;
   onRestore: () => void;
-  onDeleteForever: () => void;
+  onDeleteForever: (top: number) => void;
 }) {
   const [over, setOver] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -659,7 +667,11 @@ function NoteCard({
             <button className="icon-btn" onClick={onRestore} data-tip="Put back">
               <Icon name="restore" />
             </button>
-            <button className="icon-btn" onClick={onDeleteForever} data-tip="Delete forever">
+            <button
+              className="icon-btn"
+              onClick={() => onDeleteForever(anchorTop())}
+              data-tip="Delete forever"
+            >
               <Icon name="trash" />
             </button>
           </>
@@ -685,23 +697,23 @@ function NoteCard({
           </>
         )}
       </div>
-      {note.items ? (
-        <ul className="checks">
-          {note.items.map((item, i) => (
-            <li key={i} className={item.done ? 'done' : ''}>
-              <input type="checkbox" checked={item.done} onChange={() => onToggleItem(i)} />
-              <span onClick={open}>{item.text}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        // Safe: pasted text is forced to plain text and images are re-encoded by
-        // us, so this HTML only ever holds tags our own editor produced.
+      {(!!note.html || !note.items) && (
+        // Safe: HTML is produced by our editor or sanitized on paste.
         <div
           className="card-body"
           onClick={trashed ? undefined : open}
           dangerouslySetInnerHTML={{ __html: note.html }}
         />
+      )}
+      {note.items && (
+        <ul className="checks">
+          {note.items.map((item, i) => (
+            <li key={i} className={item.done ? 'done' : ''}>
+              <input type="checkbox" checked={item.done} onChange={() => onToggleItem(i)} />
+              <span onClick={open} dangerouslySetInnerHTML={{ __html: item.text }} />
+            </li>
+          ))}
+        </ul>
       )}
       {(note.remindAt !== null || !!note.labels.length) && (
         <div className="chips">
