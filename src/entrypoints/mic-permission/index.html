@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NoteKeeper microphone access</title>
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        color: #202124;
+      }
+      main {
+        max-width: 26rem;
+        padding: 2rem;
+      }
+      #status {
+        margin-top: 1rem;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Allow the microphone</h1>
+      <p>
+        Click <b>Allow</b> in Chrome's prompt to use voice notes. This only needs doing once, and
+        the recording never leaves your browser except for Chrome's own speech recognition.
+      </p>
+      <p id="status">Requesting...</p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

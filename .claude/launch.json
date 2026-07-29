@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "notekeeper-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", ".output/chrome-mv3", "--port", "3123"],
+      "port": 3123
+    }
+  ]
+}
