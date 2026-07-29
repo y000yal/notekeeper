@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { flushSync } from 'react-dom';
 import {
   allLabels,
@@ -416,8 +416,8 @@ export default function App() {
               key={note.id}
               note={note}
               onDragStart={() => (dragId.current = note.id)}
-              onDropOn={() => {
-                if (dragId.current) commit(reorder(notes, dragId.current, note.id));
+              onDropOn={(place) => {
+                if (dragId.current) commit(reorder(notes, dragId.current, note.id, place));
                 dragId.current = null;
                 // A date sort would just override the drop, so honour the drag.
                 if (prefs.sort !== 'manual') updatePrefs({ sort: 'manual' });
@@ -598,7 +598,7 @@ function NoteCard({
   onTogglePin: () => void;
   onToggleItem: (index: number) => void;
   onDragStart: () => void;
-  onDropOn: () => void;
+  onDropOn: (place: 'before' | 'after') => void;
   onLabelClick: (label: string) => void;
   onPopOut: () => void;
   onRemind: (top: number) => void;
@@ -606,9 +606,10 @@ function NoteCard({
   onRestore: () => void;
   onDeleteForever: (top: number) => void;
 }) {
-  const [over, setOver] = useState(false);
+  const [over, setOver] = useState<'before' | 'after' | null>(null);
   const [dragging, setDragging] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
+  const placeRef = useRef<'before' | 'after'>('before');
   const trashed = note.deletedAt !== null;
 
   /** Open the editor level with this card, pulled up if it would hang off-screen. */
@@ -628,12 +629,20 @@ function NoteCard({
     onRemind(anchorTop());
   }
 
+  function dropPlace(e: DragEvent): 'before' | 'after' {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return 'before';
+    // Grid is 2-column: prefer the pointer's closer edge so cross-column drops feel right.
+    const midY = rect.top + rect.height / 2;
+    return e.clientY < midY ? 'before' : 'after';
+  }
+
   return (
     <article
       ref={cardRef}
       className={
         'card' +
-        (over ? ' drag-over' : '') +
+        (over ? ` drag-over drag-${over}` : '') +
         (dragging ? ' dragging' : '') +
         (note.reminderDone ? ' done' : '')
       }
@@ -645,19 +654,32 @@ function NoteCard({
         } as React.CSSProperties
       }
       draggable={!trashed}
-      onDragStart={() => {
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', note.id);
         setDragging(true);
         onDragStart();
       }}
-      onDragEnd={() => setDragging(false)}
+      onDragEnd={() => {
+        setDragging(false);
+        setOver(null);
+      }}
       onDragOver={(e) => {
         e.preventDefault();
-        setOver(true);
+        e.dataTransfer.dropEffect = 'move';
+        const place = dropPlace(e);
+        placeRef.current = place;
+        setOver(place);
       }}
-      onDragLeave={() => setOver(false)}
-      onDrop={() => {
-        setOver(false);
-        onDropOn();
+      onDragLeave={(e) => {
+        // Ignore leave events that are just entering a child inside this card.
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setOver(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(null);
+        onDropOn(placeRef.current);
       }}
     >
       <div className="card-head">

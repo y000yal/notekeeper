@@ -45,6 +45,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  container-type: inline-size;
+  container-name: panel;
 }
 
 .search {
@@ -442,15 +444,21 @@ body {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: -6px;
-  height: 2px;
+  height: 3px;
   border-radius: 2px;
   background: var(--ink);
   opacity: 0.35;
+  pointer-events: none;
 }
 
-.card.drag-over {
-  transform: translateY(2px);
+.card.drag-before::before {
+  top: -6px;
+  bottom: auto;
+}
+
+.card.drag-after::before {
+  top: auto;
+  bottom: -6px;
 }
 
 .card.dragging {
@@ -950,11 +958,36 @@ body {
   }
 }
 
-/* ponytail: CSS columns give Keep's masonry look with no layout JS. */
+/* Masonry/mosaic: column count follows the side-panel width (container queries,
+   not the browser viewport — media queries would ignore panel resize). */
 .list.grid {
   display: block;
-  columns: 2;
+  column-count: 1;
   column-gap: 10px;
+}
+
+@container panel (min-width: 320px) {
+  .list.grid {
+    column-count: 2;
+  }
+}
+
+@container panel (min-width: 480px) {
+  .list.grid {
+    column-count: 3;
+  }
+}
+
+@container panel (min-width: 640px) {
+  .list.grid {
+    column-count: 4;
+  }
+}
+
+@container panel (min-width: 800px) {
+  .list.grid {
+    column-count: 5;
+  }
 }
 
 .list.grid .card {

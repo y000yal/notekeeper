@@ -426,13 +426,22 @@ export function sortNotes(notes: Note[], sort: Sort = 'manual'): Note[] {
   );
 }
 
-/** Move `dragId` to where `overId` currently sits. */
-export function reorder(notes: Note[], dragId: string, overId: string): Note[] {
+/** Move `dragId` before or after `overId`. */
+export function reorder(
+  notes: Note[],
+  dragId: string,
+  overId: string,
+  place: 'before' | 'after' = 'before',
+): Note[] {
   const from = notes.findIndex((n) => n.id === dragId);
-  const to = notes.findIndex((n) => n.id === overId);
-  if (from < 0 || to < 0 || from === to) return notes;
+  const over = notes.findIndex((n) => n.id === overId);
+  if (from < 0 || over < 0 || from === over) return notes;
   const next = [...notes];
-  next.splice(to, 0, ...next.splice(from, 1));
+  const [item] = next.splice(from, 1);
+  let insertAt = over;
+  if (from < over) insertAt -= 1; // indices after the removal
+  if (place === 'after') insertAt += 1;
+  next.splice(insertAt, 0, item!);
   return next;
 }
 
