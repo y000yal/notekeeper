@@ -33,7 +33,7 @@ export default function App() {
   const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Note | null>(null);
   const [draftVoice, setDraftVoice] = useState(false);
-  const [draftImage, setDraftImage] = useState(false);
+  const [draftPanel, setDraftPanel] = useState<'' | 'remind'>('');
   const [fabOpen, setFabOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTop, setEditingTop] = useState(0);
@@ -187,18 +187,21 @@ export default function App() {
     setConfirming(null);
   }
 
-  function startDraft(changes: Partial<Note> = {}, opts: { voice?: boolean; image?: boolean } = {}) {
+  function startDraft(
+    changes: Partial<Note> = {},
+    opts: { voice?: boolean; panel?: '' | 'remind' } = {},
+  ) {
     setFabOpen(false);
     setDraft({ ...newNote(), ...changes });
     setDraftVoice(!!opts.voice);
-    setDraftImage(!!opts.image);
+    setDraftPanel(opts.panel ?? '');
   }
 
   function closeDraft() {
     if (draft && !isEmpty(draft)) commit([{ ...draft, updatedAt: Date.now() }, ...notes]);
     setDraft(null);
     setDraftVoice(false);
-    setDraftImage(false);
+    setDraftPanel('');
   }
 
   function closeEditor() {
@@ -444,10 +447,10 @@ export default function App() {
                 type="button"
                 role="menuitem"
                 className="fab-action"
-                onClick={() => startDraft({}, { image: true })}
+                onClick={() => startDraft({}, { panel: 'remind' })}
               >
-                <Icon name="image" />
-                <span>Image</span>
+                <Icon name="bell" />
+                <span>Reminder</span>
               </button>
               {dictationSupported && (
                 <button
@@ -464,19 +467,19 @@ export default function App() {
                 type="button"
                 role="menuitem"
                 className="fab-action"
-                onClick={() => startDraft({ items: [{ text: '', done: false }] })}
+                onClick={() => startDraft()}
               >
-                <Icon name="list" />
-                <span>List</span>
+                <Icon name="format" />
+                <span>Text</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
                 className="fab-action"
-                onClick={() => startDraft()}
+                onClick={() => startDraft({ items: [{ text: '', done: false }] })}
               >
-                <Icon name="format" />
-                <span>Text</span>
+                <Icon name="list" />
+                <span>List</span>
               </button>
             </div>
           )}
@@ -508,10 +511,10 @@ export default function App() {
               onDelete={() => {
                 setDraft(null);
                 setDraftVoice(false);
-                setDraftImage(false);
+                setDraftPanel('');
               }}
               startVoice={draftVoice}
-              startImage={draftImage}
+              startPanel={draftPanel}
             />
           </div>
         </div>
