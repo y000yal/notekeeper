@@ -70,7 +70,7 @@ async function storePendingReminder(id: string, title: string, body: string) {
   await chrome.storage.session.set({ pendingReminders: pending });
   // Badge tells the user something needs attention.
   chrome.action.setBadgeText({ text: '!' });
-  chrome.action.setBadgeBackgroundColor({ color: '#FBBC04' });
+  chrome.action.setBadgeBackgroundColor({ color: '#FFD300' });
 }
 
 /** Fires on the alarm: notify unless the note is gone or already ticked off. */

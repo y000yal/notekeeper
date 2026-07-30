@@ -15,8 +15,11 @@ export function useDictation(onText: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [lang, setLang] = useState('en-US');
   const recRef = useRef<any>(null);
   const onTextRef = useRef(onText);
+  const startedAt = useRef(0);
   onTextRef.current = onText;
 
   const stop = useCallback(() => {
@@ -29,7 +32,9 @@ export function useDictation(onText: (text: string) => void) {
     const rec = new Recognition();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = chrome.i18n?.getUILanguage?.() ?? 'en-US';
+    const uiLang = chrome.i18n?.getUILanguage?.() ?? 'en-US';
+    rec.lang = uiLang;
+    setLang(uiLang);
 
     rec.onresult = (event: any) => {
       let pending = '';
@@ -60,12 +65,23 @@ export function useDictation(onText: (text: string) => void) {
       recRef.current = null;
       setListening(false);
       setInterim('');
+      setElapsed(0);
     };
 
     recRef.current = rec;
     rec.start();
+    startedAt.current = Date.now();
+    setElapsed(0);
     setListening(true);
   }, []);
+
+  useEffect(() => {
+    if (!listening) return;
+    const id = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt.current) / 1000));
+    }, 250);
+    return () => clearInterval(id);
+  }, [listening]);
 
   useEffect(() => () => recRef.current?.abort(), []);
 
@@ -73,7 +89,86 @@ export function useDictation(onText: (text: string) => void) {
     listening,
     interim,
     error,
+    elapsed,
+    lang,
     toggle: () => (recRef.current ? stop() : start()),
     stop,
   };
+}
+
+export function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+const BAR_COUNT = 28;
+
+/** Live mic levels for the recording waveform. Falls back to a soft pulse if denied. */
+export function useVoiceLevels(active: boolean): number[] {
+  const [levels, setLevels] = useState(() => Array.from({ length: BAR_COUNT }, () => 0.12));
+  const raf = useRef(0);
+
+  useEffect(() => {
+    if (!active) {
+      setLevels(Array.from({ length: BAR_COUNT }, () => 0.12));
+      return;
+    }
+
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    let alive = true;
+
+    void (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+        if (!alive) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.7;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          const next = Array.from({ length: BAR_COUNT }, (_, i) => {
+            const idx = Math.floor((i / BAR_COUNT) * (data.length - 1));
+            return Math.max(0.08, (data[idx] ?? 0) / 255);
+          });
+          setLevels(next);
+          raf.current = requestAnimationFrame(tick);
+        };
+        raf.current = requestAnimationFrame(tick);
+      } catch {
+        // Permission already granted for speech usually; if not, animate softly.
+        const tick = () => {
+          const t = Date.now() / 220;
+          setLevels(
+            Array.from({ length: BAR_COUNT }, (_, i) => {
+              const wave = 0.25 + 0.55 * Math.abs(Math.sin(t + i * 0.45));
+              return wave * (0.4 + 0.6 * ((i % 5) / 5));
+            }),
+          );
+          raf.current = requestAnimationFrame(tick);
+        };
+        raf.current = requestAnimationFrame(tick);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf.current);
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close();
+    };
+  }, [active]);
+
+  return levels;
 }

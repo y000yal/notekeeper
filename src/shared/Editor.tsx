@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { matchEmojis } from './emojis';
 import { COLORS, blocksFromHtml, htmlFromBlocks, looksLikeCode, sanitizePastedHtml, selectedHtmlIn, stripHtml, wrapAsCodeBlock, type Note, type Repeat, type RepeatUnit } from './notes';
 import {
@@ -9,7 +9,7 @@ import {
   scheduleReminder,
   toInputValue,
 } from './reminders';
-import { dictationSupported, useDictation } from './dictation';
+import { dictationSupported, formatElapsed, useDictation, useVoiceLevels } from './dictation';
 
 export function Editor({
   note,
@@ -19,6 +19,7 @@ export function Editor({
   onDelete,
   onPopOut,
   startVoice = false,
+  startImage = false,
   startPanel = '',
 }: {
   note: Note;
@@ -29,6 +30,8 @@ export function Editor({
   /** Omitted inside the popped-out window itself — nothing left to pop out of. */
   onPopOut?: () => void;
   startVoice?: boolean;
+  /** Open the image picker once on mount (new-note FAB → Image). */
+  startImage?: boolean;
   /** Opens with this panel already showing (the card's bell opens 'remind'). */
   startPanel?: '' | 'format' | 'color' | 'label' | 'remind';
 }) {
@@ -91,6 +94,7 @@ export function Editor({
       onChange({ html: bodyRef.current?.innerHTML ?? '' });
     }
   });
+  const voiceLevels = useVoiceLevels(dictation.listening);
 
   const startedRef = useRef(false);
   useEffect(() => {
@@ -99,6 +103,16 @@ export function Editor({
       dictation.toggle();
     }
   }, [startVoice]);
+
+  const startedImageRef = useRef(false);
+  useEffect(() => {
+    if (startImage && !startedImageRef.current) {
+      startedImageRef.current = true;
+      // Let the modal paint first so the picker isn't blocked.
+      const id = requestAnimationFrame(() => fileRef.current?.click());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [startImage]);
 
   function exec(command: string, value?: string) {
     bodyRef.current?.focus();
@@ -580,7 +594,10 @@ export function Editor({
   };
 
   return (
-    <section className="card editor" style={{ '--card': note.color } as React.CSSProperties}>
+    <section
+      className={'card editor' + (dictation.listening ? ' recording' : '')}
+      style={{ '--card': note.color } as React.CSSProperties}
+    >
       <div className="card-head">
         <input
           className="title"
@@ -589,6 +606,12 @@ export function Editor({
           placeholder="Title"
           autoFocus={!startVoice}
         />
+        {dictation.listening && (
+          <span className="rec-timer" aria-live="polite">
+            <span className="rec" />
+            {formatElapsed(dictation.elapsed)}
+          </span>
+        )}
         {onPopOut && (
           <button className="icon-btn" data-tip="Pop out into its own window" onClick={onPopOut}>
             <Icon name="popout" />
@@ -775,9 +798,23 @@ export function Editor({
       )}
 
       {dictation.listening && (
-        <p className="interim">
-          <span className="rec" /> Listening... {dictation.interim}
-        </p>
+        <div className="voice-stage">
+          {dictation.interim ? (
+            <p className="interim-text">
+              {dictation.interim}
+              <span className="voice-caret" />
+            </p>
+          ) : null}
+          <div className="voice-wave" aria-hidden="true">
+            {voiceLevels.map((level, i) => (
+              <span
+                key={i}
+                className={level > 0.22 ? 'on' : ''}
+                style={{ height: `${Math.round(8 + level * 28)}px` }}
+              />
+            ))}
+          </div>
+        </div>
       )}
       {dictation.error && <p className="error">{dictation.error}</p>}
 
@@ -848,8 +885,8 @@ export function Editor({
                 <button
                   key={color}
                   style={{ background: color }}
-                  data-tip={color === '#202124' ? 'Default' : color}
-                  className={color === '#202124' ? 'ink-default' : ''}
+                  data-tip={color === '#202020' ? 'Default' : color}
+                  className={color === '#202020' ? 'ink-default' : ''}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => paint('foreColor', color)}
                 />
@@ -873,7 +910,19 @@ export function Editor({
         </>
       )}
 
-      <div className="toolbar bottom">
+      {dictation.listening && (
+        <div className="mic-row">
+          <button
+            className="mic-fab pulsing"
+            data-tip="Stop dictation"
+            onClick={dictation.toggle}
+          >
+            <Icon name="mic" />
+          </button>
+        </div>
+      )}
+
+      <div className={'toolbar bottom' + (dictation.listening ? ' recording-bar' : '')}>
         {showBody && (
           <button
             className={'icon-btn' + (panel === 'format' ? ' active' : '')}
@@ -981,7 +1030,7 @@ export function Editor({
 
               {note.remindAt !== null && !note.reminderDone && (
                 <div className="popover-actions">
-                  <button className="close" onClick={completeReminder}>
+                  <button className="close primary" onClick={completeReminder}>
                     Complete
                   </button>
                 </div>
@@ -1014,10 +1063,10 @@ export function Editor({
             />
           </>
         )}
-        {dictationSupported && (
+        {dictationSupported && !dictation.listening && (
           <button
-            className={'icon-btn' + (dictation.listening ? ' rec-on' : '')}
-            data-tip={dictation.listening ? 'Stop dictation' : 'Dictate'}
+            className="icon-btn"
+            data-tip="Dictate"
             onClick={dictation.toggle}
           >
             <Icon name="mic" />
@@ -1028,7 +1077,7 @@ export function Editor({
           data-tip={items ? 'Convert to text' : 'Convert to list'}
           onClick={toggleList}
         >
-          <Icon name="list" />
+          <Icon name={items ? 'text' : 'list'} />
         </button>
         <button className="icon-btn" data-tip="Delete note" onClick={onDelete}>
           <Icon name="trash" />
@@ -1044,6 +1093,16 @@ export function Editor({
           Close
         </button>
       </div>
+
+      {dictation.listening && (
+        <p className="rec-status">
+          Listening... <strong>tap the mic to stop</strong>
+          <span>
+            {' '}
+            · {dictation.lang.includes('-') ? dictation.lang.replace('-', ' (') + ')' : dictation.lang}
+          </span>
+        </p>
+      )}
 
       {panel === 'color' && (
         <div className="palette">
@@ -1114,12 +1173,12 @@ export function Editor({
 }
 
 const TEXT_COLORS = [
-  '#202124',
+  '#202020',
   '#d93025',
   '#e37400',
-  '#f9ab00',
+  '#c9a400',
   '#188038',
-  '#1a73e8',
+  '#5c5c5c',
   '#a142f4',
   '#e52592',
 ];
@@ -1155,59 +1214,261 @@ async function shrinkToDataUrl(file: File, max = 1200): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
-const PATHS: Record<string, string> = {
-  search:
-    'M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z',
-  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
-  pin: 'M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7a1 1 0 0 0 0 2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3V4h1a1 1 0 0 0 0-2z',
-  mic: 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72z',
-  list: 'M3 5h2v2H3zm0 6h2v2H3zm0 6h2v2H3zM7 5h14v2H7zm0 6h14v2H7zm0 6h14v2H7z',
-  bullets:
-    'M4 10.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm0-12a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM8 5h12v2H8zm0 6h12v2H8zm0 6h12v2H8z',
-  numbers:
-    'M2 17h2v.5H3v1h1v.5H2v1h3v-4H2zm1-9h1V4H2v1h1zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2zm5-6h14v2H7zm0 6h14v2H7zm0 6h14v2H7z',
-  code: 'M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6z',
-  noticeInfo:
-    'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z',
-  noticeWarning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2zm0-4h-2v-4h2z',
-  noticeDanger:
-    'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z',
-  palette:
-    'M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.24-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.5 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
-  trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z',
-  'delete-forever':
-    'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM8.46 11.88l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14zM15.5 4l-1-1h-5l-1 1H5v2h14V4z',
-  // "A" with an underline — the formatting toggle.
-  format: 'M5 19h14v2H5zm4.2-4h1.9l1-2.6h3.8l1 2.6h1.9L15 3h-2zm2.4-4.1 1.4-3.9 1.4 3.9z',
-  textColor:
-    'M5 19h14v2H5zm4.2-4h1.9l1-2.6h3.8l1 2.6h1.9L15 3h-2zm2.4-4.1 1.4-3.9 1.4 3.9zM3 21h18v2H3z',
-  highlight:
-    'M15.16 2.76a1 1 0 0 1 1.41 0l4.67 4.67a1 1 0 0 1 0 1.41l-8.5 8.5-1.06.35-3.18 3.18a1 1 0 0 1-1.41 0l-.71-.71a1 1 0 0 1 0-1.41l3.18-3.18.35-1.06zM3 19.5 4.5 21H3z',
-  image: 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5z',
-  label:
-    'M17.63 5.84A2 2 0 0 0 16 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h11a2 2 0 0 0 1.63-.84L22 12z',
-  plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z',
-  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
-  bell: 'M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6v-5a6 6 0 0 0-4.5-5.8V4a1.5 1.5 0 0 0-3 0v1.2A6 6 0 0 0 6 11v5l-1.7 1.7V19h15.4v-1.3z',
-  circle: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12z',
-  restore: 'M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 7 7 6.9 6.9 0 0 1-4.9-2l-1.4 1.4A9 9 0 1 0 13 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2V8z',
-  filter: 'M4 6h16v2H4zm3 5h10v2H7zm3 5h4v2h-4z',
-  filterOn: 'M4 6h16v2H4zm3 5h10v2H7zm3 5h4v2h-4zM17 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8z',
-  popout:
-    'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3z',
-  moon: 'M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-9.54-4.32A5.4 5.4 0 0 1 13.36 3.1c-.44-.06-.9-.1-1.36-.1z',
-  sun: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm-1-5h2v3h-2zm0 17h2v3h-2zM2 11h3v2H2zm17 0h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zm12.1 12.1 1.4-1.4 2.1 2.1-1.4 1.4zM5.6 19.8l-1.4-1.4 2.1-2.1 1.4 1.4zM17.7 7.7l-1.4-1.4 2.1-2.1 1.4 1.4z',
-  grid: 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z',
-  sort: 'M3 18h6v-2H3zM3 6v2h18V6zm0 7h12v-2H3z',
-  settings:
-    'M19.14 12.94a7.1 7.1 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.65 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.1 7.1 0 0 0 0 1.88L2.77 14.5a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.49.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z',
-  listView: 'M3 4h18v3H3zm0 6.5h18v3H3zM3 17h18v3H3z',
+/** Line (stroke) icons — lighter visual weight than filled Material glyphs. */
+const ICONS: Record<string, ReactNode> = {
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.35-4.35" />
+    </>
+  ),
+  close: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </>
+  ),
+  mic: (
+    <>
+      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+      <path d="M12 18v4" />
+      <path d="M8 22h8" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M9 6h12" />
+      <path d="M9 12h12" />
+      <path d="M9 18h12" />
+      <rect x="3" y="4.5" width="3" height="3" rx="0.5" />
+      <rect x="3" y="10.5" width="3" height="3" rx="0.5" />
+      <rect x="3" y="16.5" width="3" height="3" rx="0.5" />
+    </>
+  ),
+  text: (
+    <>
+      <path d="M4 6h16" />
+      <path d="M4 12h12" />
+      <path d="M4 18h16" />
+    </>
+  ),
+  bullets: (
+    <>
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <circle cx="3.5" cy="6" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="12" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="18" r="0.7" fill="currentColor" stroke="none" />
+    </>
+  ),
+  numbers: (
+    <>
+      <path d="M10 6h11" />
+      <path d="M10 12h11" />
+      <path d="M10 18h11" />
+      <path d="M4 6h1v4" />
+      <path d="M4 10h2" />
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </>
+  ),
+  code: (
+    <>
+      <path d="m16 18 6-6-6-6" />
+      <path d="m8 6-6 6 6 6" />
+    </>
+  ),
+  noticeInfo: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </>
+  ),
+  noticeWarning: (
+    <>
+      <path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  noticeDanger: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5" />
+      <path d="M12 16h.01" />
+    </>
+  ),
+  palette: (
+    <>
+      <circle cx="13.5" cy="6.5" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="17.5" cy="10.5" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="7.5" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="6.5" cy="12" r=".8" fill="currentColor" stroke="none" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.7-.7 1.7-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16c3.3 0 6-2.7 6-6 0-5.5-4.5-10-10-10z" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </>
+  ),
+  'delete-forever': (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="m10 11 4 4" />
+      <path d="m14 11-4 4" />
+    </>
+  ),
+  format: (
+    <>
+      <path d="M4 20h16" />
+      <path d="m6 16 6-12 6 12" />
+      <path d="M8.5 11h7" />
+    </>
+  ),
+  textColor: (
+    <>
+      <path d="m6 16 6-12 6 12" />
+      <path d="M8.5 11h7" />
+      <path d="M4 20h16" />
+    </>
+  ),
+  highlight: (
+    <>
+      <path d="m9 11-6 6v3h3l6-6" />
+      <path d="m15 5 4 4" />
+      <path d="M14.5 5.5 18 9l-7.5 7.5H7v-3.5z" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="1.5" />
+      <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+    </>
+  ),
+  label: (
+    <>
+      <path d="M12.6 3.1a2 2 0 0 0-1.4-.6H4a1 1 0 0 0-1 1v7.2a2 2 0 0 0 .6 1.4l8.4 8.4a2 2 0 0 0 2.8 0l6.2-6.2a2 2 0 0 0 0-2.8z" />
+      <circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  check: <path d="M20 6 9 17l-5-5" />,
+  bell: (
+    <>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" />
+    </>
+  ),
+  circle: <circle cx="12" cy="12" r="8" />,
+  restore: (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  filter: (
+    <>
+      <path d="M4 5h16" />
+      <path d="M7 12h10" />
+      <path d="M10 19h4" />
+    </>
+  ),
+  filterOn: (
+    <>
+      <path d="M4 5h16" />
+      <path d="M7 12h10" />
+      <path d="M10 19h4" />
+      <circle cx="17" cy="6" r="2.5" />
+    </>
+  ),
+  popout: (
+    <>
+      <path d="M14 3h7v7" />
+      <path d="M10 14 21 3" />
+      <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+    </>
+  ),
+  moon: <path d="M21 14.3A9 9 0 1 1 9.7 3a7 7 0 0 0 11.3 11.3z" />,
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.9 4.9 1.4 1.4" />
+      <path d="m17.7 17.7 1.4 1.4" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.3 17.7-1.4 1.4" />
+      <path d="m19.1 4.9-1.4 1.4" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  sort: (
+    <>
+      <path d="M4 6h16" />
+      <path d="M4 12h10" />
+      <path d="M4 18h6" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  listView: (
+    <>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </>
+  ),
 };
 
 export function Icon({ name }: { name: string }) {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path d={PATHS[name] ?? ''} fill="currentColor" />
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {ICONS[name]}
     </svg>
   );
 }

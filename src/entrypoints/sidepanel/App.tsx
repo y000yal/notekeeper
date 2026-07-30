@@ -33,6 +33,8 @@ export default function App() {
   const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Note | null>(null);
   const [draftVoice, setDraftVoice] = useState(false);
+  const [draftImage, setDraftImage] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTop, setEditingTop] = useState(0);
   const [editingPanel, setEditingPanel] = useState<'' | 'remind'>('');
@@ -185,15 +187,18 @@ export default function App() {
     setConfirming(null);
   }
 
-  function startDraft(changes: Partial<Note> = {}, voice = false) {
+  function startDraft(changes: Partial<Note> = {}, opts: { voice?: boolean; image?: boolean } = {}) {
+    setFabOpen(false);
     setDraft({ ...newNote(), ...changes });
-    setDraftVoice(voice);
+    setDraftVoice(!!opts.voice);
+    setDraftImage(!!opts.image);
   }
 
   function closeDraft() {
     if (draft && !isEmpty(draft)) commit([{ ...draft, updatedAt: Date.now() }, ...notes]);
     setDraft(null);
     setDraftVoice(false);
+    setDraftImage(false);
   }
 
   function closeEditor() {
@@ -224,18 +229,21 @@ export default function App() {
   const editing = notes.find((n) => n.id === editingId && n.deletedAt === null) ?? null;
   const trashCount = notes.filter((n) => n.deletedAt !== null).length;
 
-  // Clicking outside the open composer or a header menu (or pressing Escape) closes it.
+  // Clicking outside the open composer / FAB / header menu (or Escape) closes it.
   const composerRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (draft && !composerRef.current?.contains(target)) closeDraft();
+      if (fabOpen && !fabRef.current?.contains(target)) setFabOpen(false);
       if (menu && !headerRef.current?.contains(target)) setMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (menu) setMenu(null);
+      if (fabOpen) setFabOpen(false);
+      else if (menu) setMenu(null);
       else if (draft) closeDraft();
       else if (editingId) closeEditor();
     };
@@ -249,166 +257,131 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="search" ref={headerRef}>
-        <Icon name="search" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setSuggesting(true)}
-          onBlur={() => setSuggesting(false)}
-          placeholder="Search notes and labels"
-          aria-label="Search notes and labels"
-        />
-        {query && (
-          <button className="icon-btn" onClick={() => setQuery('')} data-tip="Clear search">
-            <Icon name="close" />
-          </button>
-        )}
-        <Menu
-          name="filter"
-          tip="Filter"
-          icon={filter === 'all' ? 'filter' : 'filterOn'}
-          title="Show"
-          open={menu === 'filter'}
-          onToggle={setMenu}
-        >
-          {(
-            [
-              ['all', 'Everything'],
-              ['reminders', 'Reminders only'],
-              ['notes', 'Notes without reminders'],
-            ] as [Filter, string][]
-          ).map(([value, text]) => (
-            <MenuItem
-              key={value}
-              text={text}
-              active={filter === value}
-              onPick={() => {
-                setFilter(value);
-                setMenu(null);
-              }}
-            />
-          ))}
-        </Menu>
-
-        <Menu
-          name="sort"
-          tip="Sort notes"
-          icon="sort"
-          title="Sort by"
-          open={menu === 'sort'}
-          onToggle={setMenu}
-        >
-          {(
-            [
-              ['manual', 'My order (drag to arrange)'],
-              ['created', 'Date created'],
-              ['modified', 'Date modified'],
-            ] as [Sort, string][]
-          ).map(([value, text]) => (
-            <MenuItem
-              key={value}
-              text={text}
-              active={prefs.sort === value}
-              onPick={() => {
-                updatePrefs({ sort: value });
-                setMenu(null);
-              }}
-            />
-          ))}
-        </Menu>
-
-        <button
-          className="icon-btn"
-          data-tip={prefs.view === 'grid' ? 'List view' : 'Grid view'}
-          onClick={() => switchView(prefs.view === 'grid' ? 'list' : 'grid')}
-        >
-          <Icon name={prefs.view === 'grid' ? 'listView' : 'grid'} />
-        </button>
-
-        <Menu
-          name="settings"
-          tip="Settings"
-          icon="settings"
-          title="Settings"
-          open={menu === 'settings'}
-          onToggle={setMenu}
-        >
-          <MenuItem
-            text={prefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            icon={prefs.theme === 'dark' ? 'sun' : 'moon'}
-            onPick={() => {
-              updatePrefs({ theme: prefs.theme === 'dark' ? 'light' : 'dark' });
-              setMenu(null);
-            }}
+      <header className="topbar" ref={headerRef}>
+        <div className="search">
+          <Icon name="search" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setSuggesting(true)}
+            onBlur={() => setSuggesting(false)}
+            placeholder="Search notes and labels"
+            aria-label="Search notes and labels"
           />
-          <MenuItem
-            text={filter === 'trash' ? 'Back to notes' : `Trash (${trashCount})`}
-            icon="trash"
-            active={filter === 'trash'}
-            onPick={() => {
-              setFilter(filter === 'trash' ? 'all' : 'trash');
-              setMenu(null);
-            }}
-          />
-          <p className="menu-note">NoteKeeper {chrome.runtime.getManifest().version}</p>
-        </Menu>
-
-        {suggesting && !!suggestedLabels.length && (
-          <div className="suggest">
-            <p className="popover-title">Labels</p>
-            <div className="chips">
-              {suggestedLabels.map((label) => (
-                // mousedown, not click: the input's blur would unmount us first.
-                <button key={label} className="chip" onMouseDown={() => setQuery(label)}>
-                  {label}
-                </button>
-              ))}
+          {query && (
+            <button className="icon-btn" onClick={() => setQuery('')} data-tip="Clear search">
+              <Icon name="close" />
+            </button>
+          )}
+          {suggesting && !!suggestedLabels.length && (
+            <div className="suggest">
+              <p className="popover-title">Labels</p>
+              <div className="chips">
+                {suggestedLabels.map((label) => (
+                  // mousedown, not click: the input's blur would unmount us first.
+                  <button key={label} className="chip" onMouseDown={() => setQuery(label)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        <div className="tools">
+          <Menu
+            name="filter"
+            tip="Filter"
+            icon={filter === 'all' ? 'filter' : 'filterOn'}
+            title="Show"
+            open={menu === 'filter'}
+            onToggle={setMenu}
+          >
+            {(
+              [
+                ['all', 'Everything'],
+                ['reminders', 'Reminders only'],
+                ['notes', 'Notes without reminders'],
+              ] as [Filter, string][]
+            ).map(([value, text]) => (
+              <MenuItem
+                key={value}
+                text={text}
+                active={filter === value}
+                onPick={() => {
+                  setFilter(value);
+                  setMenu(null);
+                }}
+              />
+            ))}
+          </Menu>
+
+          <Menu
+            name="sort"
+            tip="Sort notes"
+            icon="sort"
+            title="Sort by"
+            open={menu === 'sort'}
+            onToggle={setMenu}
+          >
+            {(
+              [
+                ['manual', 'My order (drag to arrange)'],
+                ['created', 'Date created'],
+                ['modified', 'Date modified'],
+              ] as [Sort, string][]
+            ).map(([value, text]) => (
+              <MenuItem
+                key={value}
+                text={text}
+                active={prefs.sort === value}
+                onPick={() => {
+                  updatePrefs({ sort: value });
+                  setMenu(null);
+                }}
+              />
+            ))}
+          </Menu>
+
+          <button
+            className="icon-btn"
+            data-tip={prefs.view === 'grid' ? 'List view' : 'Grid view'}
+            onClick={() => switchView(prefs.view === 'grid' ? 'list' : 'grid')}
+          >
+            <Icon name={prefs.view === 'grid' ? 'listView' : 'grid'} />
+          </button>
+
+          <Menu
+            name="settings"
+            tip="Settings"
+            icon="settings"
+            title="Settings"
+            open={menu === 'settings'}
+            onToggle={setMenu}
+          >
+            <MenuItem
+              text={prefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              icon={prefs.theme === 'dark' ? 'sun' : 'moon'}
+              onPick={() => {
+                updatePrefs({ theme: prefs.theme === 'dark' ? 'light' : 'dark' });
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              text={filter === 'trash' ? 'Back to notes' : `Trash (${trashCount})`}
+              icon="trash"
+              active={filter === 'trash'}
+              onPick={() => {
+                setFilter(filter === 'trash' ? 'all' : 'trash');
+                setMenu(null);
+              }}
+            />
+            <p className="menu-note">NoteKeeper {chrome.runtime.getManifest().version}</p>
+          </Menu>
+        </div>
       </header>
 
       {notice && <p className="error">{notice}</p>}
-
-      <div ref={composerRef}>
-      {draft ? (
-        <Editor
-          note={draft}
-          knownLabels={labels}
-          onChange={(changes) => setDraft({ ...draft, ...changes })}
-          onClose={closeDraft}
-          onDelete={() => {
-            setDraft(null);
-            setDraftVoice(false);
-          }}
-          startVoice={draftVoice}
-        />
-      ) : (
-        <div className="composer">
-          <button className="composer-field" onClick={() => startDraft()}>
-            Take a note...
-          </button>
-          <button
-            className="icon-btn"
-            data-tip="New list"
-            onClick={() => startDraft({ items: [{ text: '', done: false }] })}
-          >
-            <Icon name="list" />
-          </button>
-          {dictationSupported && (
-            <button
-              className="icon-btn"
-              data-tip="New voice note"
-              onClick={() => startDraft({}, true)}
-            >
-              <Icon name="mic" />
-            </button>
-          )}
-        </div>
-      )}
-      </div>
-
 
       <div className={'list ' + prefs.view}>
         {visible.map((note) => (
@@ -461,6 +434,87 @@ export default function App() {
         <p className="hint trash-banner">
           Notes in the trash are deleted for good after {TRASH_DAYS} days.
         </p>
+      )}
+
+      {filter !== 'trash' && !draft && (
+        <div className={'fab-wrap' + (fabOpen ? ' open' : '')} ref={fabRef}>
+          {fabOpen && (
+            <div className="fab-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                className="fab-action"
+                onClick={() => startDraft({}, { image: true })}
+              >
+                <Icon name="image" />
+                <span>Image</span>
+              </button>
+              {dictationSupported && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="fab-action"
+                  onClick={() => startDraft({}, { voice: true })}
+                >
+                  <Icon name="mic" />
+                  <span>Audio</span>
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className="fab-action"
+                onClick={() => startDraft({ items: [{ text: '', done: false }] })}
+              >
+                <Icon name="list" />
+                <span>List</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="fab-action"
+                onClick={() => startDraft()}
+              >
+                <Icon name="format" />
+                <span>Text</span>
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={'fab' + (fabOpen ? ' open' : '')}
+            aria-label={fabOpen ? 'Close create menu' : 'Create note'}
+            aria-expanded={fabOpen}
+            onClick={() => setFabOpen((o) => !o)}
+          >
+            <Icon name={fabOpen ? 'close' : 'plus'} />
+          </button>
+        </div>
+      )}
+
+      {draft && (
+        <div
+          className="backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeDraft();
+          }}
+        >
+          <div className="modal" ref={composerRef} style={{ marginTop: 48 }}>
+            <Editor
+              note={draft}
+              knownLabels={labels}
+              onChange={(changes) => setDraft({ ...draft, ...changes })}
+              onClose={closeDraft}
+              onDelete={() => {
+                setDraft(null);
+                setDraftVoice(false);
+                setDraftImage(false);
+              }}
+              startVoice={draftVoice}
+              startImage={draftImage}
+            />
+          </div>
+        </div>
       )}
 
       {confirming && (
