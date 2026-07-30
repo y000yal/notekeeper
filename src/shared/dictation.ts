@@ -58,7 +58,7 @@ export function useDictation(onText: (text: string) => void) {
           'This browser blocks the speech recognition service, so voice notes are unavailable here. They work in Chrome.',
         );
       } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        setError(`Voice input failed: ${event.error}`);
+        setError('Voice input failed. Try again.');
       }
     };
     rec.onend = () => {

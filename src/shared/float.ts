@@ -18,10 +18,11 @@ function openFloatingNote(url: string, width: number, height: number) {
         win.document.title = 'NoteKeeper';
       };
       name();
-      win.document.body.style.margin = '0';
+      win.document.documentElement.style.cssText = 'height:100%;overflow:hidden';
+      win.document.body.style.cssText = 'margin:0;height:100%;overflow:hidden';
       const frame = win.document.createElement('iframe');
       frame.src = url;
-      frame.style.cssText = 'border:0;width:100%;height:100vh;display:block';
+      frame.style.cssText = 'border:0;width:100%;height:100%;display:block';
       frame.addEventListener('load', name);
       win.document.body.append(frame);
       [0, 60, 250, 800].forEach((delay) => win.setTimeout(name, delay));

@@ -626,6 +626,7 @@ export function Editor({
         </button>
       </div>
 
+      <div className="editor-scroll">
       {showBody && (
         <div
           ref={bodyRef}
@@ -771,6 +772,29 @@ export function Editor({
         </ul>
       ) : null}
 
+      {dictation.listening && (
+        <div className="voice-stage">
+          {dictation.interim ? (
+            <p className="interim-text">
+              {dictation.interim}
+              <span className="voice-caret" />
+            </p>
+          ) : null}
+          <div className="voice-wave" aria-hidden="true">
+            {voiceLevels.map((level, i) => (
+              <span
+                key={i}
+                className={level > 0.22 ? 'on' : ''}
+                style={{ height: `${Math.round(8 + level * 28)}px` }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {dictation.error && <p className="error">{dictation.error}</p>}
+      </div>
+
+      <div className="editor-dock">
       {note.remindAt !== null && (
         <div className="chips">
           <span className={'chip reminder' + (note.reminderDone ? ' done' : '')}>
@@ -796,27 +820,6 @@ export function Editor({
           ))}
         </div>
       )}
-
-      {dictation.listening && (
-        <div className="voice-stage">
-          {dictation.interim ? (
-            <p className="interim-text">
-              {dictation.interim}
-              <span className="voice-caret" />
-            </p>
-          ) : null}
-          <div className="voice-wave" aria-hidden="true">
-            {voiceLevels.map((level, i) => (
-              <span
-                key={i}
-                className={level > 0.22 ? 'on' : ''}
-                style={{ height: `${Math.round(8 + level * 28)}px` }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-      {dictation.error && <p className="error">{dictation.error}</p>}
 
       {panel === 'format' && showBody && (
         <>
@@ -922,7 +925,7 @@ export function Editor({
         </div>
       )}
 
-      <div className={'toolbar bottom' + (dictation.listening ? ' recording-bar' : '')}>
+      <div className={'toolbar bottom menubar' + (dictation.listening ? ' recording-bar' : '')}>
         {showBody && (
           <button
             className={'icon-btn' + (panel === 'format' ? ' active' : '')}
@@ -1168,6 +1171,7 @@ export function Editor({
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }

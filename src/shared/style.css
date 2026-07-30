@@ -296,6 +296,18 @@ body {
 .card.editor {
   border-color: rgb(255 211 0 / 0.45);
   box-shadow: 0 2px 8px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(90vh, 100%);
+}
+
+.popout .card.editor {
+  /* Side-panel modal caps height; the pop-out window must fill the frame. */
+  max-height: none;
+  height: 100%;
+  box-shadow: none;
+  border-color: transparent;
 }
 
 .card-head {
@@ -1140,26 +1152,96 @@ body {
   max-height: 8rem;
 }
 
+.editor-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.editor-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0;
+  padding-top: 4px;
+}
+
+.editor-dock .chips {
+  margin: 0;
+}
+
+.toolbar.bottom.menubar {
+  margin-top: 0;
+  padding: 6px 4px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card, #fff) var(--card-mix), var(--card-base));
+}
+
 /* The popped-out window is one note, so it fills the frame: the body takes the
    slack, which keeps the toolbar on the bottom edge at any window height. */
+html:has(.popout),
+html:has(.popout) body,
+html:has(.popout) #root {
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
 .popout {
-  padding: 8px;
-  height: 100vh;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Brand strip + side-panel gap don't belong in the floating note window. */
+.popout::before {
+  display: none;
 }
 
 .popout .card {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   border: 0;
+  border-radius: 0;
   box-shadow: none;
+  /* No outer chrome padding — note colour fills the window. */
+  padding: 8px 10px 0;
 }
 
 .popout .body,
 .popout .checks {
-  flex: 1;
+  flex: none;
+  min-height: 2.5rem;
+}
+
+.popout .editor-dock {
+  padding: 6px 0 0;
+}
+
+.popout .editor-dock .chips {
+  padding: 0 2px 2px;
+}
+
+.popout .editor-dock .toolbar.bottom.menubar {
+  margin: 0 -10px 0;
+  padding: 8px 10px;
+  border-radius: 0;
+  /* Sit flush on the window bottom — no gap under the bar. */
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
 
 .empty {

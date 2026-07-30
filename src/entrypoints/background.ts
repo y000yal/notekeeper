@@ -50,8 +50,8 @@ async function playChime() {
     await chrome.runtime.sendMessage({ type: 'play-chime' });
     // Let it finish, then release the document.
     setTimeout(() => void chrome.offscreen.closeDocument().catch(() => {}), 3000);
-  } catch (e) {
-    console.warn('[NoteKeeper] chime failed', e);
+  } catch {
+    // Chime is best-effort; Brave/OS may block audio.
   }
 }
 

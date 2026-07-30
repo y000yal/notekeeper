@@ -110,7 +110,6 @@ export default function App() {
    */
   async function popOut(note: Note) {
     setEditingId(null);
-    setNotice('Opening the note window...');
     try {
       // Injected from here, not from the worker: executeScript only carries a
       // user gesture into the page when the caller still holds one, and a
@@ -129,34 +128,16 @@ export default function App() {
           .catch(() => false);
         if (granted) floated = await floatNote(note.id);
       }
-      if (floated.ok) {
-        setNotice('');
-        return;
-      }
-      console.error('[NoteKeeper] Floating window failed:', floated.error);
-      setNotice(
-        restricted
-          ? 'Floating notes need an ordinary web page in the current tab, not a Chrome page. Opened a window instead.'
-          : `Cannot float here (${floated.error}). Opened a window instead.`,
-      );
-      const reply = (await chrome.runtime.sendMessage({
-        type: 'open-note-window',
-        id: note.id,
-      })) as { ok: boolean; error?: string } | undefined;
-      if (!reply?.ok) {
-        setNotice(`Could not open the note window: ${reply?.error ?? 'no reply from NoteKeeper'}`);
-      }
-    } catch (e) {
-      console.error('[NoteKeeper] Pop out failed:', e);
-      setNotice(`Pop out failed: ${(e as Error).message}`);
+      if (floated.ok) return;
+      await chrome.runtime.sendMessage({ type: 'open-note-window', id: note.id });
+    } catch {
+      // Fallback already attempted; nothing useful to show the user.
     }
   }
 
   function commit(next: Note[]) {
     setNotes(next);
-    setNotice('');
-    // Images are the only realistic way to hit the 10 MB local quota.
-    saveNotes(next).catch((e: Error) => setNotice(`Could not save: ${e.message}`));
+    void saveNotes(next);
   }
 
   function patch(id: string, changes: Partial<Note>) {
